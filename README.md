@@ -1,35 +1,48 @@
 <!-- SPDX-License-Identifier: MIT -->
-# Omarchy Mobile — N1 bring-up
+# Omarchy Mobile — RK3588s hardware port
 
-This independent repository carries experimental N1 (RK3588s) bring-up work
-on top of [derekross/omarchy-mobile](https://github.com/derekross/omarchy-mobile).
+This fork brings Omarchy Mobile to our RK3588s-based touchscreen development
+hardware, on top of
+[derekross/omarchy-mobile](https://github.com/derekross/omarchy-mobile).
+**The system is successfully running on the hardware:** native Linux boots,
+the Omarchy Mobile desktop renders, touch works, applications launch, and Wi-Fi
+connects to the Internet. These results were verified on 2026-10-28.
+
 The upstream project provides the mobile shell, packages, tooling and original
 Pixel documentation. Its history, credits, license notices and reference links
-are preserved here. The starting upstream revision is
+are preserved here. The tested starting upstream revision is
 [`d7ba671`](https://github.com/derekross/omarchy-mobile/commit/d7ba671).
-N1 support is local development work and is not an upstream-supported device.
-The tested work is published on the `n1-bringup` branch; the fork's `main`
-retains the newer upstream baseline.
+This hardware port is local development work and is not an upstream-supported
+device. The fork's main branch retains the newer upstream baseline.
 
-## N1 status (2026-10-28)
+## Hardware
+
+| Component | Development hardware |
+| --- | --- |
+| Processor | Rockchip RK3588s, 64-bit ARM, four Cortex-A76 cores and four Cortex-A55 cores |
+| Display | 480 × 800 portrait panel over two-lane MIPI DSI |
+| Touch | Goodix GT9xxx touchscreen controller |
+| Wireless | AP6275P module with Broadcom BCM43752 Wi-Fi over PCIe |
+| Internal storage | Onboard eMMC |
+| Development connection | USB networking for SSH and a USB serial log channel |
+
+## Verified bring-up (2026-10-28)
 
 | Area | Verified status |
 | --- | --- |
-| Native Linux | Vendor kernel `5.10.110-omamobile-n1`, USB networking and authenticated SSH |
+| Native Linux | Vendor kernel 5.10.110, USB networking and authenticated SSH |
 | Desktop and applications | Full systemd/uwsm session, Hyprland, Omarchy Mobile home and Foot launch |
-| Display and touch | 480 × 800 display and touch confirmed on the development device |
+| Display and touch | The physical display renders correctly and touch input works |
 | Graphics | Software rendering with a narrow Aquamarine adaptation; GPU acceleration is unverified |
-| Wi-Fi | AP6275P firmware, five switch/scan cycles, association, DNS and HTTPS over `wlan0`; address randomization disabled to avoid a vendor-driver lock inversion |
+| Wi-Fi | Five switch/scan cycles, association, DNS and HTTPS over `wlan0`; address randomization disabled to avoid a vendor-driver lock inversion |
 | Storage and installation | All physical storage remains read-only at runtime; the root is a host-exported read-only NBD image with a RAM overlay. Standalone internal-root installation and restart persistence are incomplete |
 
-Start with [N1 bring-up and safety gates](device/n1/BRINGUP-M1.md), the
-[normal-boot runbook](device/n1/NORMAL-BOOT-RUNBOOK.md),
-[graphics findings](device/n1/GRAPHICS-RESEARCH.md) and
-[Wi-Fi findings](device/n1/WIFI-PLAN.md), with the
-[validation results and limits](device/n1/VALIDATION.md). The Pixel installer commands below do
-not install N1. N1 remains outside the Pixel flash allowlists. Firmware, device
-backups, credentials, private captures and compiled images are not distributed
-in this repository.
+The verified result is a working native desktop and network session. The current
+root filesystem still depends on the development host; a self-contained eMMC
+installation is a separate remaining step. The Pixel installer commands below
+do not install this hardware port, which remains outside the Pixel flash
+allowlists. Firmware, device backups, credentials, private captures and compiled
+images are not distributed in this repository.
 
 ## Upstream and references
 
@@ -45,10 +58,6 @@ in this repository.
 - [Firefly RK3588 GPL kernel source](https://github.com/Firefly-rk-linux/kernel/tree/rk3588/firefly),
   [Linux](https://github.com/torvalds/linux) and
   [U-Boot Rockchip documentation](https://github.com/u-boot/u-boot/blob/master/doc/board/rockchip/rockchip.rst).
-- Source-specific citations and distinctions between board-family references
-  and tested N1 behavior: [boot research](device/n1/RESEARCH.md),
-  [root filesystem research](device/n1/ROOTFS-RESEARCH.md) and
-  [Rockusb research](device/n1/ROCKUSB-RESEARCH.md).
 
 ## Upstream project overview
 
