@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 # N1 publication checkpoint, 2026-10-28
 
-The N1 development branch starts at upstream `d7ba671`. The fork's `main`
-tracks newer upstream work; the N1 hardware results below do not validate that
-newer package set. No package sources are changed by this bring-up checkpoint.
+The original N1 bring-up checkpoint starts at upstream `d7ba671`. The hardware
+results below validate that package set. No package sources were changed by
+that checkpoint; the later source synchronization is recorded separately below.
 
 ## Host checks
 
@@ -45,3 +45,27 @@ long-duration Wi-Fi and suspend/resume are not verified. The standard Pixel
 device-specific checks and their stop/rollback conditions are documented in
 [BRINGUP-M1.md](BRINGUP-M1.md),
 [NORMAL-BOOT-RUNBOOK.md](NORMAL-BOOT-RUNBOOK.md) and [WIFI-PLAN.md](WIFI-PLAN.md).
+
+## Upstream source synchronization, 2026-10-28
+
+Merged upstream `main` at `f5da1df` (26 commits since `d7ba671`) into the
+hardware development branch. The only merge conflict was in `tests/all`:
+both upstream's alarm-wake and per-board initramfs tests and the local storage
+guard/guardian tests are retained. Hardware-port sources are unchanged. The
+README retains its anonymous hardware description, tested results, upstream
+attribution and references, and distinguishes the tested baseline from this
+source synchronization.
+
+`tests/all` passes with host Git 2.47.1. A system-only PATH first selected an
+older Git without the `merge-tree` interface used by the kernel-policy tests;
+using the normal PATH resolved that failure. `tests/packages` with system
+Python reports the same four package failures listed above. All four also
+reproduce on a clean archive of the newly synchronized upstream `f5da1df`
+with the same host environment. A fresh Arch CI-style run was stopped during
+dependency downloads; it did not produce a test result. The full package suite
+is not claimed to pass.
+
+No device commands, package updates, reboots or writes were performed for this
+source synchronization. The merged package set has not been deployed or
+validated on hardware; the earlier hardware results are not a claim that it
+has been tested.
