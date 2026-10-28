@@ -13,14 +13,22 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 for f in tools/install-phone tools/phone-provision tools/build-rootfs tools/build-packages tools/make-bundle \
          tools/lib/alarm.sh tools/lib/alarm-setup rootfs/build-inside tests/*; do
   [[ -f $f ]] || continue   # tests/owl is the OWL conformance suite's folder
-  bash -n "$f" || { echo "not ok - $f parses" >&2; exit 1; }
+  case $(head -n 1 "$f") in
+    '#!/usr/bin/env python3'*|'#!/usr/bin/python3'*)
+      python3 -B -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$f" ;;
+    *) bash -n "$f" ;;
+  esac || { echo "not ok - $f parses" >&2; exit 1; }
 done
 sh -n initramfs/init
 sh -n device/flame/initramfs/init
 sh -n device/flame/initramfs/build
+sh -n device/n1/initramfs/init
+sh -n device/n1/initramfs/init-system
+sh -n device/n1/initramfs/storage-guard
+python3 -B -c 'import ast; ast.parse(open("device/n1/pack-ram-probe").read())'
 bash -n tools/build-flame-probe
 echo "ok - scripts parse"
-for t in tests/pr-check tests/kernel-pr-check tests/install-phone tests/phone-provision tests/initramfs-grow tests/images-layout tests/device-overlays tests/simplefb-trigger tests/storage-guard tests/usb-product tests/boot-method tests/flame-probe packages/omamobile-firstboot/test/all packages/omamobile-device-felix/test/all; do
+for t in tests/pr-check tests/kernel-pr-check tests/install-phone tests/phone-provision tests/initramfs-grow tests/images-layout tests/device-overlays tests/simplefb-trigger tests/storage-guard tests/n1-storage-guard tests/n1-native-guardian tests/usb-product tests/boot-method tests/flame-probe packages/omamobile-firstboot/test/all packages/omamobile-device-felix/test/all; do
   echo "# $t"
   "$t"
 done

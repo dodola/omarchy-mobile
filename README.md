@@ -1,4 +1,56 @@
-# Omarchy Mobile
+<!-- SPDX-License-Identifier: MIT -->
+# Omarchy Mobile — N1 bring-up
+
+This independent repository carries experimental N1 (RK3588s) bring-up work
+on top of [derekross/omarchy-mobile](https://github.com/derekross/omarchy-mobile).
+The upstream project provides the mobile shell, packages, tooling and original
+Pixel documentation. Its history, credits, license notices and reference links
+are preserved here. The starting upstream revision is
+[`d7ba671`](https://github.com/derekross/omarchy-mobile/commit/d7ba671).
+N1 support is local development work and is not an upstream-supported device.
+The tested work is published on the `n1-bringup` branch; the fork's `main`
+retains the newer upstream baseline.
+
+## N1 status (2026-10-28)
+
+| Area | Verified status |
+| --- | --- |
+| Native Linux | Vendor kernel `5.10.110-omamobile-n1`, USB networking and authenticated SSH |
+| Desktop and applications | Full systemd/uwsm session, Hyprland, Omarchy Mobile home and Foot launch |
+| Display and touch | 480 × 800 display and touch confirmed on the development device |
+| Graphics | Software rendering with a narrow Aquamarine adaptation; GPU acceleration is unverified |
+| Wi-Fi | AP6275P firmware, five switch/scan cycles, association, DNS and HTTPS over `wlan0`; address randomization disabled to avoid a vendor-driver lock inversion |
+| Storage and installation | All physical storage remains read-only at runtime; the root is a host-exported read-only NBD image with a RAM overlay. Standalone internal-root installation and restart persistence are incomplete |
+
+Start with [N1 bring-up and safety gates](device/n1/BRINGUP-M1.md), the
+[normal-boot runbook](device/n1/NORMAL-BOOT-RUNBOOK.md),
+[graphics findings](device/n1/GRAPHICS-RESEARCH.md) and
+[Wi-Fi findings](device/n1/WIFI-PLAN.md), with the
+[validation results and limits](device/n1/VALIDATION.md). The Pixel installer commands below do
+not install N1. N1 remains outside the Pixel flash allowlists. Firmware, device
+backups, credentials, private captures and compiled images are not distributed
+in this repository.
+
+## Upstream and references
+
+- [Omarchy Mobile upstream](https://github.com/derekross/omarchy-mobile),
+  [contribution and safety model](CONTRIBUTING.md), [license](LICENSE) and
+  [upstream device matrix](docs/DEVICES.md).
+- [Omarchy](https://github.com/omacom/omarchy) and its
+  [package recipes](https://github.com/omacom/omarchy-pkgs).
+- [Arch Linux ARM package sources](https://github.com/archlinuxarm/PKGBUILDs).
+- [Hyprland](https://github.com/hyprwm/Hyprland),
+  [Aquamarine](https://github.com/hyprwm/aquamarine) and
+  [Mesa](https://gitlab.freedesktop.org/mesa/mesa).
+- [Firefly RK3588 GPL kernel source](https://github.com/Firefly-rk-linux/kernel/tree/rk3588/firefly),
+  [Linux](https://github.com/torvalds/linux) and
+  [U-Boot Rockchip documentation](https://github.com/u-boot/u-boot/blob/master/doc/board/rockchip/rockchip.rst).
+- Source-specific citations and distinctions between board-family references
+  and tested N1 behavior: [boot research](device/n1/RESEARCH.md),
+  [root filesystem research](device/n1/ROOTFS-RESEARCH.md) and
+  [Rockusb research](device/n1/ROCKUSB-RESEARCH.md).
+
+## Upstream project overview
 
 Native Omarchy on mobile devices: Arch Linux ARM, Hyprland and Omarchy's own packages running directly on the device with a mainline kernel, with Android apps in Waydroid as a later goal. The reference device is the Pixel 7 Pro (cheetah, gs201); community ports cover more Pixels, and the first non-Pixel ports are in review ([docs/DEVICES.md](docs/DEVICES.md)).
 
@@ -19,7 +71,7 @@ Native Omarchy on mobile devices: Arch Linux ARM, Hyprland and Omarchy's own pac
 - **New on 2026-10-19:** the Pixel Fold boots to its cover screen and the Pixel 6 builds, both community ports ([docs/DEVICES.md](docs/DEVICES.md)), and the Pixel 4 runs a read-only first-light probe; the Tensor phones share one initramfs, with each phone's quirks packed from its descriptor; our first kernel patch went upstream (the battery's charging status) and was reviewed; first login invites you to pick an AI agent, with none preinstalled.
 - **New on 2026-10-13:** home screens with 47 built-in widgets (Simon Schubert's MIT-licensed omarchy-widgets, his OWL originals run by our own OWL runtime since 2026-10-14, plus an OWL widget Store tab with an approval sheet for what each widget may run) and your own widgets made with "Create with AI" through Omarchy's default agent, behind a crash guard; 19 quick-settings tiles with an editor; one app per screen, with a "Show with…" action; the phone's screen and input on a computer over USB (`omamobile-mirror`, `tools/phone-mirror`); a device descriptor (`device.conf`) for more than one phone; and a first installer (below), which passed its first clean reinstall.
 
-## Quick start
+## Upstream Pixel quick start
 
 The installer is new: expect rough edges. You need a Pixel 7 Pro with an unlocked bootloader, an Omarchy (Arch) laptop with Docker, `android-tools` and `e2fsprogs`, and Google's factory image for the phone. Stock Android stays on slot A as the way back; installing erases `userdata`.
 

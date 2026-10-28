@@ -1,0 +1,21 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# RAM probe only: every physical disk and partition is read-only, no allowlist.
+n1_storage_guard() {
+    for node in /sys/class/block/*; do
+        [ -e "$node" ] || continue
+        name=${node##*/}
+        case "$name" in
+            ram[0-9]*|zram[0-9]*|loop[0-9]*) continue ;;
+        esac
+        [ -r "$node/ro" ] || return 1
+        [ -b "/dev/$name" ] || return 1
+        if [ "$(cat "$node/ro")" != 1 ]; then
+            blockdev --setro "/dev/$name" || return 1
+        fi
+        [ "$(cat "$node/ro")" = 1 ] || return 1
+    done
+    # N1 must have its known internal eMMC; an empty enumeration is not pass.
+    [ -r /sys/class/block/mmcblk0/ro ] &&
+        [ "$(cat /sys/class/block/mmcblk0/ro)" = 1 ]
+}

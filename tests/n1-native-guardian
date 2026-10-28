@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Exercise the native guard against ordinary files, never host block devices."""
+from pathlib import Path
+import subprocess
+import tempfile
+
+repo = Path(__file__).resolve().parents[1]
+harness = r'''
+#define _GNU_SOURCE
+#include <stdarg.h>
+#include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <linux/fs.h>
+#include <unistd.h>
+#include <assert.h>
+#include <errno.h>
+static int writes, refuse_write;
+static int fake_stat(int fd, struct stat *s) {
+    int result = fstat(fd, s);
+    if (!result) s->st_mode = (s->st_mode & ~S_IFMT) | S_IFBLK;
+    return result;
+}
+static int fake_ioctl(int fd, unsigned long cmd, ...) {
+    va_list args; va_start(args, cmd); int *value = va_arg(args, int *);
+    va_end(args);
+    if (cmd == BLKROGET) {
+        char state;
+        if (pread(fd, &state, 1, 0) != 1) return -1;
+        *value = state == '1'; return 0;
+    }
+    assert(cmd == BLKROSET && *value == 1);
+    ++writes;
+    if (refuse_write) { errno = EPERM; return -1; }
+    // The test's fake device is an ordinary file opened read-only by the guard.
+    char path[64]; snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);
+    int output = open(path, O_WRONLY);
+    assert(output >= 0);
+    assert(pwrite(output, "1", 1, 0) == 1); close(output); return 0;
+}
+#define main guardian_entry
+#define ioctl fake_ioctl
+#define fstat fake_stat
+#include "GUARDIAN_SOURCE"
+#undef main
+#undef ioctl
+#undef fstat
+static void file(const char *path, const char *value) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    assert(fd >= 0 && write(fd, value, 1) == 1); close(fd);
+}
+int main(void) {
+    assert(!mkdir("blocks", 0700) && !mkdir("devices", 0700));
+    blocks_fd = open("blocks", O_RDONLY | O_DIRECTORY);
+    devices_fd = open("devices", O_RDONLY | O_DIRECTORY);
+    file("blocks/mmcblk0", "x"); file("devices/mmcblk0", "1");
+    file("blocks/mmcblk0p15", "x"); file("devices/mmcblk0p15", "1");
+    file("blocks/loop0", "x"); // Virtual devices have no required device node.
+    assert(protect_storage(true) && writes == 0);
+    file("devices/mmcblk0p15", "0");
+    assert(!protect_storage(true) && writes == 0);
+    assert(protect_storage(false) && writes == 1);
+    file("devices/mmcblk0p15", "0"); refuse_write = 1;
+    assert(!protect_storage(false) && writes == 2);
+    refuse_write = 0; file("devices/mmcblk0p15", "1");
+    assert(!unlink("devices/mmcblk0p15")); assert(!protect_storage(false));
+    file("devices/mmcblk0p15", "1");
+    // Same descriptors must work after path relocation during root handoff.
+    assert(!rename("blocks", "moved-blocks"));
+    assert(!rename("devices", "moved-devices"));
+    assert(protect_storage(true));
+    assert(!unlink("moved-blocks/mmcblk0")); assert(!protect_storage(true));
+    puts("PASS: RO checks, no writable exception, fail-closed faults and saved mount descriptors");
+}
+'''
+# Include system declarations before redirecting only the source's calls.
+harness = harness.replace('#include <assert.h>', '#include <assert.h>\n#include <stdio.h>\n#include <fcntl.h>')
+harness = harness.replace('GUARDIAN_SOURCE', str(repo / 'device/n1/initramfs/guardian.c'))
+with tempfile.TemporaryDirectory(prefix='n1-guardian-test-') as directory:
+    work = Path(directory)
+    (work / 'test.c').write_text(harness)
+    subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-O2', str(work / 'test.c'), '-o', str(work / 'test')], check=True)
+    subprocess.run([str(work / 'test')], cwd=work, check=True)

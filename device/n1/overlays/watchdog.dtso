@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+/plugin/;
+
+/* Existing vendor node, enabled only in the separately gated RAM image. */
+&{/watchdog@feaf0000} {
+    status = "okay";
+    timeout-sec = <30>;
+};

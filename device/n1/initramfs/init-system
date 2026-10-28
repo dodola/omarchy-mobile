@@ -1,0 +1,121 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# N1 RAM-root systemd handoff trial. All physical storage stays read-only.
+export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+say() {
+    echo "omamobile-n1: $*" > /dev/kmsg 2>/dev/null
+    [ ! -c /dev/tty0 ] || echo "omamobile-n1: $*" > /dev/tty0 2>/dev/null
+}
+park() {
+    say "STOP: $*"
+    if [ -n "${watchdog_pid:-}" ]; then
+        # Keep the descriptor open, but stop feeding the hardware watchdog.
+        kill -STOP "$watchdog_pid" 2>/dev/null
+    else
+        # An early failure must not leave an unobservable parked init forever.
+        sleep 10
+        /sbin/reboot-to normal
+    fi
+    while :; do sleep 5; done
+}
+mount -t proc proc /proc || park proc
+mount -t sysfs sysfs /sys || park sysfs
+mount -t devtmpfs devtmpfs /dev || park devtmpfs
+mkdir -p /dev/pts /run /sys/kernel/config
+mount -t devpts devpts /dev/pts || park devpts
+mount -t tmpfs tmpfs /run || park tmpfs
+mount -t configfs configfs /sys/kernel/config || park configfs
+
+hostname omamobile-n1
+say "RAM probe $(uname -r); mounting complete"
+
+# The trial overlay enables only the existing DW watchdog node. No modules,
+# register probes, camera/audio services or firmware loaders are started here.
+[ -c /dev/watchdog0 ] || park 'hardware watchdog missing'
+/usr/local/sbin/n1-guardian &
+watchdog_pid=$!
+sleep 1
+kill -0 "$watchdog_pid" || park 'watchdog feeder failed'
+[ -s /run/n1-guardian-ready ] || park 'native guardian not ready'
+say 'native storage guardian and hardware watchdog armed'
+
+setup_gadget() {
+g=/sys/kernel/config/usb_gadget/omamobile
+mkdir -p "$g/strings/0x409" "$g/configs/c.1/strings/0x409" || park gadget
+echo 0x1d6b > "$g/idVendor"
+echo 0x0104 > "$g/idProduct"
+echo 'Omarchy Mobile' > "$g/strings/0x409/manufacturer"
+echo 'N1 RAM probe' > "$g/strings/0x409/product"
+echo n1-ram-probe > "$g/strings/0x409/serialnumber"
+echo 'USB network and console' > "$g/configs/c.1/strings/0x409/configuration"
+mkdir -p "$g/functions/rndis.usb0" "$g/functions/acm.GS0" || park functions
+ln -s "$g/functions/rndis.usb0" "$g/configs/c.1/" || park rndis
+ln -s "$g/functions/acm.GS0" "$g/configs/c.1/" || park acm
+udc=""
+for attempt in $(seq 1 30); do
+    for controller in /sys/class/udc/*; do
+        [ -e "$controller" ] && udc=${controller##*/} && break
+    done
+    [ -n "$udc" ] && break
+    sleep 1
+done
+[ -n "$udc" ] || park 'USB controller missing'
+echo "$udc" > "$g/UDC" || park 'USB bind failed'
+}
+if [ -c /dev/ttyGS0 ] && [ -d /sys/class/net/usb0 ]; then
+    say 'using kernel CDC serial/network gadget'
+else
+    setup_gadget
+fi
+# Serial output is available before protection checks. No network address or
+# interactive service is exposed until every physical block device is guarded.
+cat /dev/kmsg > /dev/ttyGS0 &
+say 'USB logging configured; checking storage protection'
+. /usr/local/lib/n1-storage-guard
+for attempt in $(seq 1 100); do
+    [ -r /sys/class/block/mmcblk0/ro ] && break
+    sleep 0.2
+done
+n1_storage_guard || park 'storage protection failed'
+say 'all physical storage read-only'
+ip link set lo up
+ip addr add 172.16.42.1/24 dev usb0 || park address
+ip link set usb0 up || park network
+
+# No passwordless interactive console.
+mkdir -p /etc/dropbear
+dropbear -R -E -s -j -k -p 172.16.42.1:22 || park ssh
+say 'SSH ready; public key only; all physical storage read-only'
+# Without fresh host confirmation, return to Fastboot. The boot replacement
+# is persistent; only this confirmation marker lives in RAM.
+(
+    sleep 120
+    if [ ! -e /run/omamobile-confirmed ]; then
+        say 'No host confirmation in 120 s; returning to Fastboot'
+        reboot-to bootloader
+    fi
+) &
+# Handoff is a host-requested RAM operation after full boot SHA-256 and root
+# checks. No request means this remains the observable diagnostic environment.
+while :; do
+    if [ -e /run/n1-request-systemd ]; then
+        [ -e /run/omamobile-confirmed ] || park 'boot not confirmed'
+        [ -e /run/n1-root-verified ] || park 'root not verified'
+        [ -x /mnt/n1-root/usr/lib/systemd/systemd ] || park 'systemd missing'
+        mountpoint -q /mnt/n1-root || park 'root mount missing'
+        n1_storage_guard || park 'handoff storage protection'
+        kill -0 "$watchdog_pid" || park 'guardian stopped'
+        touch /run/n1-handoff-start || park 'handoff marker'
+        say 'handing the verified RAM overlay to systemd; SSH reconnect required'
+        # Stop the initramfs SSH listener before the root's sshd takes port 22.
+        killall dropbear 2>/dev/null
+        mkdir -p /mnt/n1-root/dev /mnt/n1-root/proc /mnt/n1-root/sys /mnt/n1-root/run
+        mount --move /dev /mnt/n1-root/dev || park 'move dev'
+        mount --move /proc /mnt/n1-root/proc || park 'move proc'
+        mount --move /sys /mnt/n1-root/sys || park 'move sys'
+        mount --move /run /mnt/n1-root/run || park 'move run'
+        exec switch_root /mnt/n1-root /sbin/init
+    fi
+    sleep 1
+done

@@ -1,0 +1,54 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+# Exercise the real N1 guard with fake sysfs/device files; never touch hardware.
+set -euo pipefail
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+t=$(mktemp -d)
+trap 'rm -rf "$t"' EXIT
+mkdir -p "$t/sys/class/block" "$t/dev" "$t/bin"
+sed -e "s|/sys/class/block|$t/sys/class/block|g" \
+    -e "s|/dev/|$t/dev/|g" -e 's/\[ -b /[ -e /' \
+    device/n1/initramfs/storage-guard > "$t/guard"
+cat > "$t/bin/blockdev" <<'SH'
+#!/bin/sh
+[ "$1" = --setro ] || exit 1
+name=${2##*/}
+[ "${FAIL_NODE:-}" != "$name" ] || exit 1
+[ "${LIE_NODE:-}" = "$name" ] || echo 1 > "$FAKE_BLOCK/$name/ro"
+SH
+chmod +x "$t/bin/blockdev"
+export FAKE_BLOCK="$t/sys/class/block" PATH="$t/bin:$PATH"
+. "$t/guard"
+node() { mkdir -p "$FAKE_BLOCK/$1"; echo 0 > "$FAKE_BLOCK/$1/ro"; touch "$t/dev/$1"; }
+node mmcblk0
+node mmcblk0p1
+node mmcblk0boot0
+node sda
+node sda1
+node dm-0
+node nvme0n1
+node zram0
+n1_storage_guard
+for name in mmcblk0 mmcblk0p1 mmcblk0boot0 sda sda1 dm-0 nvme0n1; do
+    [[ $(cat "$FAKE_BLOCK/$name/ro") == 1 ]]
+done
+[[ $(cat "$FAKE_BLOCK/zram0/ro") == 0 ]]
+echo 'ok - eMMC disk/partition/boot, USB, device mapper and NVMe protected; RAM excluded'
+node mmcblk0p2
+n1_storage_guard
+[[ $(cat "$FAKE_BLOCK/mmcblk0p2/ro") == 1 ]]
+echo 'ok - a late partition is protected on the next pass'
+echo 0 > "$FAKE_BLOCK/mmcblk0p1/ro"
+export FAIL_NODE=mmcblk0p1
+if n1_storage_guard; then echo 'not ok - setro failure accepted'; exit 1; fi
+unset FAIL_NODE
+export LIE_NODE=mmcblk0p1
+if n1_storage_guard; then echo 'not ok - ineffective setro accepted'; exit 1; fi
+unset LIE_NODE
+echo 'ok - ioctl failure and unchanged kernel ro flag both fail closed'
+rm "$t/dev/mmcblk0p2"
+if n1_storage_guard; then echo 'not ok - missing device accepted'; exit 1; fi
+rm -rf "$FAKE_BLOCK/mmcblk0p2"
+rm -rf "$FAKE_BLOCK/mmcblk0"
+if n1_storage_guard; then echo 'not ok - absent internal eMMC accepted'; exit 1; fi
+echo 'ok - missing device and missing internal eMMC fail closed'

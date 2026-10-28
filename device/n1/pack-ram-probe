@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Pack an N1 legacy multi image off-device; this tool never accesses USB."""
+
+import argparse
+import gzip
+import os
+from pathlib import Path
+import struct
+import subprocess
+import time
+import zlib
+
+
+def align4(size):
+    return (size + 3) & ~3
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--kernel", type=Path, required=True)
+    parser.add_argument("--initramfs", type=Path, required=True)
+    parser.add_argument("--dtb", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    output = args.output.resolve()
+    repo = Path(__file__).resolve().parents[2]
+    if output == repo or repo in output.parents:
+        parser.error("keep kernel/DT images outside the public repository")
+    if output.exists():
+        parser.error("output already exists; choose a new artifact path")
+
+    kernel = args.kernel.read_bytes()
+    ramdisk = args.initramfs.read_bytes()
+    dtb = args.dtb.read_bytes()
+    if len(kernel) < 64 or kernel[56:60] != b"ARM\x64":
+        parser.error("expected an uncompressed ARM64 Linux Image")
+    text_offset, image_size = struct.unpack_from("<QQ", kernel, 8)
+    if text_offset != 0 or not image_size:
+        parser.error("this N1 loader requires the verified text_offset=0 layout")
+    if len(dtb) < 40 or struct.unpack_from(">I", dtb)[0] != 0xD00DFEED:
+        parser.error("expected a flattened device tree")
+    if struct.unpack_from(">I", dtb, 4)[0] != len(dtb) or len(dtb) > 2 * 1024**2:
+        parser.error("DT length must equal totalsize and fit the ARM64 DT limit")
+    board = subprocess.run(
+        ["fdtget", "-t", "s", str(args.dtb), "/", "compatible"],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    if "rockchip,rk3588s-firefly-aio-3588sg" not in board:
+        parser.error("DT is not the verified N1 board")
+    gzip.decompress(ramdisk)  # Reject an invalid compressed initramfs.
+
+    # The download address and fixed kernel target come from the inspected
+    # RK3588 U-Boot. board_quiesce_devices copies from kernel_addr_r again if
+    # entry differs, so a seemingly safer distant load address is incorrect.
+    download = 0x00C00800
+    load = 0x00400000
+    data_start = 64 + 4 * 4  # Legacy header, three lengths, terminating zero.
+    rd_start = download + data_start + align4(len(kernel))
+    if load + max(image_size, len(kernel)) > rd_start:
+        parser.error("kernel destination would overwrite the ramdisk")
+
+    # U-Boot keeps the DT in place. Its address must be 8-byte aligned, while
+    # legacy components are only 4-byte aligned. Linux permits trailing NULs
+    # after a gzip initramfs; include them in the declared size and data CRC.
+    ramdisk += bytes(-(rd_start + len(ramdisk)) % 8)
+    dt_start = rd_start + align4(len(ramdisk))
+    if dt_start % 8:
+        parser.error("DT alignment failed")
+    components = (kernel, ramdisk, dtb)
+    data = struct.pack(">4I", *(len(item) for item in components), 0)
+    for index, item in enumerate(components):
+        data += item
+        if index < 2:
+            data += bytes(-len(item) % 4)
+    if len(data) + 64 > 0x07000000:
+        parser.error("image exceeds the observed N1 download limit")
+    stamp = int(os.environ.get("SOURCE_DATE_EPOCH", str(int(time.time()))))
+    header = struct.pack(
+        ">7I4B32s", 0x27051956, 0, stamp, len(data), load, load,
+        zlib.crc32(data), 5, 22, 4, 0, b"N1 Linux RAM probe",
+    )
+    header = header[:4] + struct.pack(">I", zlib.crc32(header)) + header[8:]
+    # Exclusive creation preserves previous experiments even if run twice.
+    with output.open("xb") as target:
+        target.write(header)
+        target.write(data)
+    print(f"Packed {len(header) + len(data)} bytes; kernel=0x{load:x}; "
+          f"initrd=0x{rd_start:x}; DT=0x{dt_start:x}")
+
+
+if __name__ == "__main__":
+    main()
